@@ -99,6 +99,13 @@ xReplicant::AttachedToWindow()
 		location.x = init.left;
 		location.y = init.top;
 
+		// take a picture of where we are
+	UpdateBackgroundTransparency();
+		//BRect rect(actual_bounds);
+		//rect.OffsetTo(location);
+		//screen.GetBitmap(&background, false, &rect);
+		//fHaveBackgroundImage = false;
+
 		// add the message filter (locking and unlocking the looper)
 		Parent()->Looper()->Lock();
 		fMessageFilter = new xMessageFilter(B_WORKSPACE_ACTIVATED, this);
@@ -106,11 +113,13 @@ xReplicant::AttachedToWindow()
 //		printf("there are %ld filters\n", Parent()->Looper()->FilterList()->CountItems());
 		Parent()->Looper()->Unlock();
 
+		max_val = 0; ben_val = 0;
+		bitmap_sem = create_sem(0, "bitmap_sem");
+
 		fShouldQuit = false;
-		
-		// take a picture of where we are
 		fTakingScreenShot = false;
-		UpdateBackgroundTransparency();
+		
+		fWorkspace = current_workspace(); 
 	}
 }
 
@@ -151,7 +160,7 @@ xReplicant::Draw(BRect updateRect)
 	MovePenTo(0,0);
 //	SetDrawingMode(B_OP_COPY);
 	if (fReplicated)
-		if (fHaveBackgroundImage && background)
+		if (fHaveBackgroundImage)
 			DrawBitmap(background);
 		else
 			FillRect(actual_bounds);
@@ -195,7 +204,7 @@ xReplicant::FrameMoved(BPoint parentPoint) {
 		BPoint pos = Window()->ConvertToScreen(parentPoint);
 
 		// if the position is different to what we think then update!
-		if ((pos.x != location.x || pos.y != location.y) && (pos.x != -100)) {
+		if (pos.x != location.x || pos.y != location.y) {
 			location.x = pos.x;
 			location.y = pos.y;
 			UpdateBackgroundTransparency();
@@ -248,17 +257,27 @@ xReplicant::UpdateBackgroundTransparency()
 void
 xReplicant::PoseForScreenShot()
 {
+//	// printf("PoseForScreenShot().start\n");
 	thread_id timethread;
 
 	if (!fTakingScreenShot) {
+		int32 previous = atomic_add(&ben_val, 1);
+		if (previous >= 1)
+			if (acquire_sem(bitmap_sem) != B_NO_ERROR)
+				goto get_out;
+				
 		fTakingScreenShot = true;
-		
+
 		Hide();
-		Window()->UpdateIfNeeded();
-		
+
+		// we have to spawn a thread because the calls to Hide() and Show()
+		// are buffered and the app_server will not hide us
 		timethread = spawn_thread(wait_for_screen_shot, "posing_for_screenshot", 10, this);
 		resume_thread(timethread);
 	}
+	// printf("PoseForScreenShot().end\n");
+get_out:
+	printf(""); // nasty fudge
 }		
 
 // *******************************
@@ -266,7 +285,7 @@ xReplicant::PoseForScreenShot()
 // * replicant should be hidden, so we can now take a screen shot
 // *******************************
 void
-xReplicant::TakeScreenShot()
+xReplicant::TakeScreenShot(bool should_show=true)
 {
 	// delete the old background
 	if (background)
@@ -281,7 +300,8 @@ xReplicant::TakeScreenShot()
 	screen.GetBitmap(&background, false, &rect);
 	
 	// now we can show ourselves
-	Show();
+	if (should_show)
+		Show();
 	
 	// and declare that we have a background image
 	fHaveBackgroundImage = true;

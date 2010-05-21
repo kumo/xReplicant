@@ -39,7 +39,7 @@ public:
 						~xReplicant();
 	
 	void				PoseForScreenShot();
-	void				TakeScreenShot();
+	void				TakeScreenShot(bool should_show=true);
 	void				UpdateBackgroundTransparency();
 
 	void				WorkspaceChanged(int32 workspace);
